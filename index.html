@@ -190,7 +190,13 @@
 
   /* ---------- Gallery ---------- */
   .gallery-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:8px;}
-  .gcell{background:var(--cream-light);border-radius:14px;padding:8px;text-align:center;}
+  .gcell{position:relative;background:var(--cream-light);border-radius:14px;padding:8px;text-align:center;}
+  .gdel{position:absolute;top:4px;right:4px;width:24px;height:24px;border:none;border-radius:50%;
+    background:rgba(198,75,59,.95);color:#fff;font-size:12px;line-height:24px;padding:0;cursor:pointer;
+    box-shadow:0 2px 6px rgba(0,0,0,.25);}
+  .gdel:hover{background:#b03b2c;}
+  .gdel[disabled]{opacity:.5;cursor:wait;}
+  .btn-clear{width:100%;margin-top:16px;background:#c64b3b;color:#fff;justify-content:center;box-shadow:none;}
   .gcell img{width:100%;border-radius:10px;display:block;background:#fff;}
   .gcell span{display:block;margin-top:6px;font-size:12px;font-weight:700;color:var(--green);
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -301,6 +307,7 @@
     <h2 style="margin-bottom:10px">Gallery</h2>
     <div id="galleryGrid" class="gallery-grid"></div>
     <div id="galleryEmpty" class="gallery-empty">No pets yet — be the first!</div>
+    <button id="adminClear" class="btn btn-clear" style="display:none">🧹 Clear the whole park</button>
   </div>
 </div>
 
@@ -326,6 +333,7 @@
   const SUPABASE_URL  = "https://kzvuacafdcasvzayemfi.supabase.co";
   const SUPABASE_ANON = "sb_publishable_XwP9CbLmHz1o0iGZCDTAgQ_UC2z-3Tj";
   const REMOTE = SUPABASE_URL.indexOf("http")===0 && SUPABASE_ANON.length>20;
+  const ADMIN_KEY = "furrcrew-admin"; // change this — gates the in-app "clear park" button
 
   const STORE_KEY = "furrcrew_park_v1";
   const PAL = {green:"#1B4D3A",cream:"#E5DCC3",brown:"#6E4426",navy:"#1C3D70"};
@@ -367,9 +375,32 @@
     const rows = await res.json();
     return rows[0];
   }
+  async function deletePet(id){
+    if(REMOTE){
+      const res=await fetch(REST+"?id=eq."+encodeURIComponent(id), {method:"DELETE", headers:HEADERS});
+      if(!res.ok) throw new Error("delete "+res.status);
+    }
+    pets=pets.filter(p=>p.id!==id);
+    myPets=myPets.filter(x=>x!==id); saveMyPets();
+    if(!REMOTE) localSaveAll(pets);
+    syncActors(); refreshCountAndHint();
+  }
+  async function clearPark(){
+    if(REMOTE){
+      const res=await fetch(REST+"?id=not.is.null", {method:"DELETE", headers:HEADERS});
+      if(!res.ok) throw new Error("clear "+res.status);
+    }
+    pets=[]; myPets=[]; saveMyPets();
+    if(!REMOTE) localSaveAll(pets);
+    syncActors(); refreshCountAndHint();
+  }
 
   let pets = []; // {id,name,img}
   let hasContributed = !!localStorage.getItem("furrcrew_contributed");
+  function loadMyPets(){ try{return JSON.parse(localStorage.getItem("furrcrew_my_pets"))||[];}catch(e){return[];} }
+  function saveMyPets(){ try{localStorage.setItem("furrcrew_my_pets",JSON.stringify(myPets));}catch(e){} }
+  let myPets = loadMyPets();           // ids of pets this device created
+  function isMine(id){ return myPets.indexOf(id)>=0; }
 
   /* ============ Park rendering ============ */
   const park = document.getElementById("park");
@@ -446,6 +477,65 @@
     pctx.fillRect(x-w/2-2*s, baseY-h-4*s, w+4*s, 5*s);
     pctx.fillRect(x-3*s, baseY-h-7*s, 6*s, 3*s);                // handle
   }
+  function drawParakeet(cx,cy,s){
+    pctx.fillStyle="#2f8f3a";                                   // long tail
+    pctx.beginPath();
+    pctx.moveTo(cx-2*s,cy+6*s); pctx.lineTo(cx+2*s,cy+6*s);
+    pctx.lineTo(cx+1*s,cy+25*s); pctx.lineTo(cx-1*s,cy+25*s); pctx.closePath(); pctx.fill();
+    pctx.fillStyle="#3aa84a";                                   // body
+    pctx.beginPath(); pctx.ellipse(cx,cy+5*s,8*s,12*s,0,0,Math.PI*2); pctx.fill();
+    pctx.fillStyle="#2f8f3a";                                   // wing
+    pctx.beginPath(); pctx.ellipse(cx+2*s,cy+5*s,5*s,10*s,0,0,Math.PI*2); pctx.fill();
+    pctx.fillStyle="#a83526";                                   // maroon shoulder patch
+    pctx.beginPath(); pctx.ellipse(cx-3*s,cy,3*s,2*s,0,0,Math.PI*2); pctx.fill();
+    pctx.fillStyle="#46b657";                                   // head
+    pctx.beginPath(); pctx.arc(cx,cy-8*s,6*s,0,Math.PI*2); pctx.fill();
+    pctx.strokeStyle="#e57aa0"; pctx.lineWidth=Math.max(1,1.4*s); // rose neck ring
+    pctx.beginPath(); pctx.arc(cx,cy-4*s,5.2*s,Math.PI*0.05,Math.PI*0.95); pctx.stroke();
+    pctx.fillStyle="#d23b2c";                                   // red hooked beak
+    pctx.beginPath();
+    pctx.moveTo(cx+5*s,cy-9*s); pctx.quadraticCurveTo(cx+11*s,cy-8*s,cx+6*s,cy-4.5*s); pctx.closePath(); pctx.fill();
+    pctx.fillStyle="#10210f";                                   // eye
+    pctx.beginPath(); pctx.arc(cx+2*s,cy-9*s,1.4*s,0,Math.PI*2); pctx.fill();
+  }
+  function drawCage(x,baseY,s){
+    shadow(x, baseY+3*s, 24*s, 6*s);
+    const w=44*s, bodyTop=baseY-50*s, bottom=baseY-6*s, left=x-w/2, right=x+w/2;
+    pctx.fillStyle="#b8902f";                                   // base plate
+    pctx.beginPath(); pctx.ellipse(x, bottom+5*s, w*0.5, 6*s, 0,0,Math.PI*2); pctx.fill();
+    pctx.strokeStyle="#9c7b2e"; pctx.lineWidth=Math.max(1,2*s); pctx.lineCap="round";
+    pctx.beginPath(); pctx.moveTo(left+8*s, baseY-10*s); pctx.lineTo(right-8*s, baseY-10*s); pctx.stroke(); // perch
+    drawParakeet(x, baseY-28*s, s);                            // Fluffy on the perch
+    pctx.strokeStyle="#e0bd58"; pctx.lineWidth=Math.max(1,1.5*s); pctx.lineCap="round";
+    pctx.beginPath(); pctx.moveTo(left,bottom); pctx.lineTo(right,bottom); pctx.stroke();
+    pctx.beginPath(); pctx.moveTo(left,bodyTop); pctx.lineTo(right,bodyTop); pctx.stroke();
+    const nb=6;
+    for(let i=0;i<=nb;i++){ const bx=left+w*i/nb; pctx.beginPath(); pctx.moveTo(bx,bottom); pctx.lineTo(bx,bodyTop); pctx.stroke(); }
+    pctx.beginPath(); pctx.moveTo(left,bodyTop); pctx.quadraticCurveTo(x,bodyTop-22*s,right,bodyTop); pctx.stroke(); // dome
+    pctx.beginPath(); pctx.moveTo(left+w*0.26,bodyTop); pctx.quadraticCurveTo(x,bodyTop-15*s,right-w*0.26,bodyTop); pctx.stroke();
+    const hookY=bodyTop-22*s;
+    pctx.beginPath(); pctx.moveTo(x,hookY); pctx.lineTo(x,hookY-5*s); pctx.stroke();
+    pctx.beginPath(); pctx.arc(x,hookY-9*s,4*s,0.15*Math.PI,1.85*Math.PI); pctx.stroke();    // top hook
+    const tt=Date.now()%3400;                                  // looping "peekaboooo!" bubble
+    if(tt<2300){
+      const bob=Math.sin(Date.now()/260)*2, txt="peekaboooo!";
+      pctx.save();
+      pctx.font="700 12px 'Trebuchet MS',sans-serif"; pctx.textAlign="center";
+      const bw=pctx.measureText(txt).width+18, bh=22, by=bodyTop-48*s+bob;
+      pctx.fillStyle="#E5DCC3";
+      roundRect(pctx, x-bw/2, by, bw, bh, 11); pctx.fill();
+      pctx.beginPath(); pctx.moveTo(x-5,by+bh-1); pctx.lineTo(x+5,by+bh-1); pctx.lineTo(x,by+bh+8); pctx.closePath(); pctx.fill();
+      pctx.fillStyle="#1B4D3A"; pctx.fillText(txt, x, by+15);
+      pctx.restore();
+    }
+    pctx.save();                                               // "Fluffy" name tag
+    pctx.font="600 11px 'Trebuchet MS',sans-serif"; pctx.textAlign="center";
+    const tw=pctx.measureText("Fluffy").width+12;
+    pctx.fillStyle="rgba(20,58,44,.8)";
+    roundRect(pctx, x-tw/2, baseY+8*s, tw, 16, 8); pctx.fill();
+    pctx.fillStyle="#E5DCC3"; pctx.fillText("Fluffy", x, baseY+8*s+12);
+    pctx.restore();
+  }
   function drawGround(){
     const g = pctx.createLinearGradient(0,0,0,H);
     g.addColorStop(0,"#246149"); g.addColorStop(1,"#163b2c");
@@ -468,6 +558,7 @@
     drawTree(W*0.62, H*0.25, sc*0.9);
     drawBin(W*0.30, H*0.62, sc);
     drawBin(W*0.80, H*0.70, sc);
+    drawCage(W*0.74, H*0.36, sc*1.05);   // Fluffy the parakeet
   }
 
   const greetings=["hi! 🐾","woof","sniff sniff","mrrp","new friend!","♥","let's play"];
@@ -923,7 +1014,7 @@
     releaseBtn.disabled=true; releaseBtn.textContent="Releasing…";
     try{
       const saved = await storePet(draft);
-      pets.push(saved); syncActors();
+      pets.push(saved); myPets.push(saved.id); saveMyPets(); syncActors();
       const a=actors.find(x=>x.id===saved.id);
       if(a){ a.x=W/2; a.y=H*0.7; a.bubble="hello! 🐾"; a.bubbleT=110; pickTarget(a); }
       if(!hasContributed){ hasContributed=true; try{localStorage.setItem("furrcrew_contributed","1");}catch(e){} }
@@ -943,7 +1034,7 @@
   }
 
   /* ============ Gallery ============ */
-  document.getElementById("galBtn").addEventListener("click",()=>{
+  function renderGallery(){
     const grid=document.getElementById("galleryGrid");
     const empty=document.getElementById("galleryEmpty");
     grid.innerHTML="";
@@ -954,10 +1045,20 @@
         const c=document.createElement("div"); c.className="gcell";
         const im=document.createElement("img"); im.src=p.img; im.alt=p.name; im.style.background="#1f5240";
         const s=document.createElement("span"); s.textContent=p.name;
-        c.appendChild(im); c.appendChild(s); grid.appendChild(c);
+        c.appendChild(im); c.appendChild(s);
+        grid.appendChild(c);
       });
     }
-    open("galOverlay");
+    document.getElementById("adminClear").style.display = (location.hash==="#admin") ? "flex":"none";
+  }
+  document.getElementById("galBtn").addEventListener("click",()=>{ renderGallery(); open("galOverlay"); });
+  document.getElementById("adminClear").addEventListener("click",async ()=>{
+    const pass=prompt("Admin passphrase to clear the WHOLE park:");
+    if(pass===null) return;
+    if(pass!==ADMIN_KEY){ alert("Wrong passphrase."); return; }
+    if(!confirm("Delete ALL pets in the park? This cannot be undone.")) return;
+    try{ await clearPark(); renderGallery(); }
+    catch(e){ alert("Couldn't clear the park — check your connection."); }
   });
 
   /* ============ Live refresh (shared mode) ============ */
@@ -965,9 +1066,9 @@
     if(!REMOTE) return;
     try{
       const fresh = await fetchPets();
-      const have = {}; pets.forEach(p=>have[p.id]=true);
-      const added = fresh.filter(p=>!have[p.id]);
-      if(added.length){ pets = pets.concat(added); syncActors(); refreshCountAndHint(); }
+      const a=fresh.map(p=>p.id).sort().join(",");
+      const b=pets.map(p=>p.id).sort().join(",");
+      if(a!==b){ pets=fresh; syncActors(); refreshCountAndHint(); } // reconciles adds AND removes
       statusDot.textContent = "● live";
     }catch(e){ statusDot.textContent = "○ offline"; }
   }
