@@ -29,7 +29,7 @@
   /* ---------- Top bar ---------- */
   header{
     display:flex;align-items:center;justify-content:space-between;
-    padding:14px 18px;
+    padding:14px 18px 12px;
     background:var(--green);
     color:var(--cream);
     z-index:20;
@@ -39,14 +39,31 @@
   .logo sup{font-size:10px;opacity:.7;}
   .count{font-size:13px;color:var(--cream);opacity:.85;font-weight:600;}
 
+  /* ---------- Rotating tagline ---------- */
+  .tagline-bar{
+    background:var(--green-deep);color:var(--cream);
+    text-align:center;padding:9px 18px;min-height:38px;
+    display:flex;align-items:center;justify-content:center;z-index:19;
+  }
+  #tagline{
+    font-size:13px;line-height:1.35;font-style:italic;opacity:.92;
+    transition:opacity .5s ease;max-width:680px;
+  }
+  #tagline.fade{opacity:0;}
+
   /* ---------- Park ---------- */
   .park-screen{position:relative;flex:1;overflow:hidden;}
   #park{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;}
   .empty-hint{
-    position:absolute;top:46%;left:50%;transform:translate(-50%,-50%);
+    position:absolute;top:44%;left:50%;transform:translate(-50%,-50%);
     color:var(--cream);text-align:center;pointer-events:none;
     background:rgba(20,58,44,.35);padding:18px 26px;border-radius:16px;
     font-size:15px;line-height:1.5;backdrop-filter:blur(2px);
+  }
+  .status-dot{
+    position:absolute;top:10px;right:14px;z-index:16;
+    font-size:11px;color:var(--cream);opacity:.65;pointer-events:none;
+    background:rgba(20,58,44,.35);padding:3px 9px;border-radius:999px;
   }
 
   /* ---------- Bottom action bar ---------- */
@@ -67,7 +84,6 @@
   .btn-primary{background:var(--cream);color:var(--green);}
   .btn-primary:hover{background:var(--cream-light);}
   .btn-ghost{background:var(--brown);color:var(--cream);}
-  .btn-navy{background:var(--navy);color:var(--cream);}
 
   /* ---------- Modal / overlay ---------- */
   .overlay{
@@ -120,6 +136,7 @@
   .row-btns{display:flex;gap:10px;}
   .row-btns .btn{flex:1;justify-content:center;box-shadow:none;}
   .btn-release{background:var(--green);color:var(--cream);}
+  .btn-release[disabled]{opacity:.6;cursor:wait;}
   .btn-cancel{background:transparent;color:var(--brown);border:2px solid rgba(110,68,38,.3);}
 
   /* ---------- Gallery ---------- */
@@ -133,10 +150,6 @@
   .close-x{float:right;background:none;border:none;font-size:24px;color:var(--brown);cursor:pointer;line-height:1;margin:-4px -4px 0 0;}
   .tag{display:inline-block;background:var(--navy);color:var(--cream);font-size:11px;font-weight:700;
     padding:3px 9px;border-radius:999px;margin-bottom:10px;letter-spacing:.5px;}
-  .speech{position:absolute;pointer-events:none;font-size:12px;font-weight:700;
-    background:var(--cream);color:var(--green);padding:3px 9px;border-radius:999px;
-    box-shadow:0 3px 10px rgba(0,0,0,.2);transform:translate(-50%,-100%);white-space:nowrap;}
-  footer-note{}
 </style>
 </head>
 <body>
@@ -146,8 +159,11 @@
     <div class="count" id="count">0 in the crew</div>
   </header>
 
+  <div class="tagline-bar"><span id="tagline">A crew of pets, all in one place.</span></div>
+
   <div class="park-screen">
     <canvas id="park"></canvas>
+    <div class="status-dot" id="statusDot"></div>
     <div class="empty-hint" id="emptyHint">
       🐾 The park is quiet.<br/>Draw a pet and let it loose!
     </div>
@@ -208,54 +224,95 @@
 <script>
 (function(){
   "use strict";
+
+  /* ============================================================
+     CONFIG — paste your Supabase project details here.
+     Both values are safe to expose in the browser (the anon key
+     is designed to be public; access is controlled by row-level
+     security policies on the database).
+     Leave as-is to run in local-only mode (pets saved per device).
+  ============================================================ */
+  const SUPABASE_URL  = "https://kzvuacafdcasvzayemfi.supabase.co";
+  const SUPABASE_ANON = "sb_publishable_XwP9CbLmHz1o0iGZCDTAgQ_UC2z-3Tj";
+  const REMOTE = SUPABASE_URL.indexOf("http")===0 && SUPABASE_ANON.length>20;
+
   const STORE_KEY = "furrcrew_park_v1";
   const PAL = {green:"#1B4D3A",cream:"#E5DCC3",brown:"#6E4426",navy:"#1C3D70"};
 
-  /* ============ Storage ============ */
-  function loadPets(){
-    try{ return JSON.parse(localStorage.getItem(STORE_KEY)) || []; }
-    catch(e){ return []; }
+  /* ============ Data layer (remote + local fallback) ============ */
+  const REST = REMOTE ? SUPABASE_URL.replace(/\/$/,"") + "/rest/v1/pets" : null;
+  const HEADERS = REMOTE ? {
+    "apikey":SUPABASE_ANON,
+    "Authorization":"Bearer "+SUPABASE_ANON,
+    "Content-Type":"application/json"
+  } : null;
+
+  function localLoad(){
+    try{ return JSON.parse(localStorage.getItem(STORE_KEY)) || []; }catch(e){ return []; }
   }
-  function savePets(arr){
+  function localSaveAll(arr){
     try{ localStorage.setItem(STORE_KEY, JSON.stringify(arr)); }catch(e){}
   }
-  let pets = loadPets(); // {id,name,img(dataURL)}
+
+  // returns array of {id,name,img}
+  async function fetchPets(){
+    if(!REMOTE) return localLoad();
+    const res = await fetch(REST+"?select=id,name,img&order=created_at.asc", {headers:HEADERS});
+    if(!res.ok) throw new Error("load "+res.status);
+    return await res.json();
+  }
+  // returns the stored pet {id,name,img}
+  async function storePet(pet){
+    if(!REMOTE){
+      const local = localLoad(); local.push(pet); localSaveAll(local);
+      return pet;
+    }
+    const res = await fetch(REST, {
+      method:"POST",
+      headers:Object.assign({"Prefer":"return=representation"}, HEADERS),
+      body:JSON.stringify({name:pet.name, img:pet.img})
+    });
+    if(!res.ok) throw new Error("save "+res.status);
+    const rows = await res.json();
+    return rows[0];
+  }
+
+  let pets = []; // {id,name,img}
 
   /* ============ Park rendering ============ */
   const park = document.getElementById("park");
   const pctx = park.getContext("2d");
   const emptyHint = document.getElementById("emptyHint");
   const countEl = document.getElementById("count");
+  const statusDot = document.getElementById("statusDot");
   let W=0,H=0,DPR=Math.min(window.devicePixelRatio||1,2);
 
-  // live actor objects (sprite + behaviour), built from pets
   let actors = [];
   const imgCache = {};
-
   function makeImg(src){
     if(imgCache[src]) return imgCache[src];
     const im = new Image(); im.src = src; imgCache[src]=im; return im;
-  }
-
-  function buildActors(){
-    actors = pets.map(p=>{
-      const existing = actors.find(a=>a.id===p.id);
-      if(existing) return existing;
-      return {
-        id:p.id, name:p.name, img:makeImg(p.img),
-        x:Math.random()*Math.max(W-120,120)+60,
-        y:Math.random()*Math.max(H-260,160)+120,
-        tx:0,ty:0, state:"walk", t:Math.random()*100,
-        timer:rand(60,200), facing:1, size:64,
-        bubble:null, bubbleT:0
-      };
-    });
-    actors.forEach(pickTarget);
   }
   function rand(a,b){return a+Math.random()*(b-a);}
   function pickTarget(a){
     a.tx = rand(70, Math.max(W-70,80));
     a.ty = rand(140, Math.max(H-120,160));
+  }
+
+  // build/refresh actors from pets, preserving existing ones
+  function syncActors(){
+    const byId = {}; actors.forEach(a=>byId[a.id]=a);
+    actors = pets.map(p=>{
+      if(byId[p.id]) return byId[p.id];
+      const a = {
+        id:p.id, name:p.name, img:makeImg(p.img),
+        x:Math.random()*Math.max(W-120,120)+60,
+        y:Math.random()*Math.max(H-260,160)+120,
+        tx:0,ty:0, state:"walk", t:Math.random()*100,
+        timer:rand(60,200), facing:1, size:64, bubble:null, bubbleT:0
+      };
+      pickTarget(a); return a;
+    });
   }
 
   function resize(){
@@ -266,21 +323,12 @@
   }
   window.addEventListener("resize",resize);
 
-  /* ground / scenery drawn each frame */
   function drawGround(){
-    // sky-ish top band (cream) to ground (green) — subtle gradient
     const g = pctx.createLinearGradient(0,0,0,H);
-    g.addColorStop(0,"#246149");
-    g.addColorStop(1,"#163b2c");
+    g.addColorStop(0,"#246149"); g.addColorStop(1,"#163b2c");
     pctx.fillStyle=g; pctx.fillRect(0,0,W,H);
-
-    // soft path
     pctx.fillStyle="rgba(229,220,195,.10)";
-    pctx.beginPath();
-    pctx.ellipse(W*0.5,H*0.78,W*0.46,H*0.16,0,0,Math.PI*2);
-    pctx.fill();
-
-    // scattered bushes (deterministic-ish)
+    pctx.beginPath(); pctx.ellipse(W*0.5,H*0.78,W*0.46,H*0.16,0,0,Math.PI*2); pctx.fill();
     pctx.fillStyle="rgba(20,58,44,.55)";
     const spots=[[0.12,0.32],[0.85,0.28],[0.7,0.6],[0.22,0.7],[0.5,0.4],[0.93,0.7]];
     spots.forEach((s,i)=>{
@@ -293,99 +341,76 @@
     });
   }
 
+  const greetings=["hi! 🐾","woof","sniff sniff","mrrp","new friend!","♥","let's play"];
+  function pickGreeting(){return greetings[(Math.random()*greetings.length)|0];}
+
   function step(a, dt){
-    a.t += dt;
-    a.timer -= 1;
+    a.t += dt; a.timer -= 1;
     if(a.state==="walk"){
-      const dx=a.tx-a.x, dy=a.ty-a.y;
-      const d=Math.hypot(dx,dy);
+      const dx=a.tx-a.x, dy=a.ty-a.y, d=Math.hypot(dx,dy);
       if(d<6 || a.timer<=0){
         a.state = Math.random()<0.45 ? "sit" : "sniff";
         a.timer = rand(50,160);
         if(a.state==="sniff"){ a.bubble="*sniff*"; a.bubbleT=70; }
       } else {
-        const sp=0.7;
-        a.x += (dx/d)*sp; a.y += (dy/d)*sp;
-        a.facing = dx<0 ? -1 : 1;
+        const sp=0.7; a.x += (dx/d)*sp; a.y += (dy/d)*sp; a.facing = dx<0 ? -1 : 1;
       }
-    } else { // sit or sniff
-      if(a.timer<=0){
-        a.state="walk"; pickTarget(a); a.timer=rand(80,220);
-      }
+    } else {
+      if(a.timer<=0){ a.state="walk"; pickTarget(a); a.timer=rand(80,220); }
     }
-    // greet nearby pets
     for(const b of actors){
       if(b===a) continue;
       if(Math.hypot(b.x-a.x,b.y-a.y)<54 && a.bubbleT<=0 && Math.random()<0.012){
-        a.bubble = pickGreeting(); a.bubbleT=80;
-        a.facing = b.x<a.x ? -1:1;
+        a.bubble = pickGreeting(); a.bubbleT=80; a.facing = b.x<a.x ? -1:1;
       }
     }
     if(a.bubbleT>0) a.bubbleT--; else a.bubble=null;
   }
-  const greetings=["hi! 🐾","woof","sniff sniff","mrrp","new friend!","♥","let's play"];
-  function pickGreeting(){return greetings[(Math.random()*greetings.length)|0];}
 
+  function roundRect(c,x,y,w,h,r){
+    c.beginPath();
+    c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);
+    c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();
+  }
   function drawActor(a){
     const bob = (a.state==="walk") ? Math.sin(a.t*0.18)*3 : Math.sin(a.t*0.05)*1.2;
-    const squashSit = a.state==="sit" ? 0.9 : 1;
-    const s=a.size;
+    const squashSit = a.state==="sit" ? 0.9 : 1, s=a.size;
     pctx.save();
     pctx.translate(a.x, a.y+bob);
-    // shadow
-    pctx.save();
-    pctx.translate(0, s*0.42);
-    pctx.scale(1,0.35);
-    pctx.fillStyle="rgba(0,0,0,.22)";
-    pctx.beginPath();pctx.arc(0,0,s*0.34,0,Math.PI*2);pctx.fill();
+    pctx.save(); pctx.translate(0,s*0.42); pctx.scale(1,0.35);
+    pctx.fillStyle="rgba(0,0,0,.22)"; pctx.beginPath();pctx.arc(0,0,s*0.34,0,Math.PI*2);pctx.fill();
     pctx.restore();
-    // sprite
     pctx.scale(a.facing,1);
     if(a.img.complete && a.img.naturalWidth){
       pctx.drawImage(a.img, -s/2, -s*squashSit/2 - s*0.18, s, s*squashSit);
     }
     pctx.restore();
-    // name tag
     pctx.save();
-    pctx.font="600 11px 'Trebuchet MS',sans-serif";
-    pctx.textAlign="center";
+    pctx.font="600 11px 'Trebuchet MS',sans-serif"; pctx.textAlign="center";
     const tw=pctx.measureText(a.name).width+12;
     pctx.fillStyle="rgba(20,58,44,.78)";
     roundRect(pctx, a.x-tw/2, a.y+s*0.30, tw, 16, 8); pctx.fill();
-    pctx.fillStyle=PAL.cream;
-    pctx.fillText(a.name, a.x, a.y+s*0.30+12);
+    pctx.fillStyle=PAL.cream; pctx.fillText(a.name, a.x, a.y+s*0.30+12);
     pctx.restore();
-    // speech bubble
     if(a.bubble){
       pctx.save();
-      pctx.font="700 11px 'Trebuchet MS',sans-serif";
-      pctx.textAlign="center";
-      const bw=pctx.measureText(a.bubble).width+16;
-      const by=a.y - s*0.55 + bob;
-      pctx.fillStyle=PAL.cream;
-      roundRect(pctx, a.x-bw/2, by-16, bw, 18, 9); pctx.fill();
-      pctx.fillStyle=PAL.green;
-      pctx.fillText(a.bubble, a.x, by-3);
+      pctx.font="700 11px 'Trebuchet MS',sans-serif"; pctx.textAlign="center";
+      const bw=pctx.measureText(a.bubble).width+16, by=a.y - s*0.55 + bob;
+      pctx.fillStyle=PAL.cream; roundRect(pctx, a.x-bw/2, by-16, bw, 18, 9); pctx.fill();
+      pctx.fillStyle=PAL.green; pctx.fillText(a.bubble, a.x, by-3);
       pctx.restore();
     }
-  }
-  function roundRect(c,x,y,w,h,r){
-    c.beginPath();
-    c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);
-    c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();
   }
 
   let last=performance.now();
   function loop(now){
     const dt=Math.min((now-last)/16.67,3); last=now;
     drawGround();
-    // sort by y for depth
     actors.sort((p,q)=>p.y-q.y);
     for(const a of actors){ step(a,dt); drawActor(a); }
     requestAnimationFrame(loop);
   }
 
-  // tap a pet to make it react
   park.addEventListener("pointerdown",e=>{
     const r=park.getBoundingClientRect();
     const x=e.clientX-r.left, y=e.clientY-r.top;
@@ -398,8 +423,41 @@
   });
 
   function refreshCountAndHint(){
-    countEl.textContent = pets.length + (pets.length===1?" in the crew":" in the crew");
-    emptyHint.style.display = pets.length? "none":"block";
+    countEl.textContent = pets.length + " in the crew";
+    emptyHint.style.display = pets.length ? "none":"block";
+  }
+
+  /* ============ Rotating taglines ============ */
+  const TAGLINES=[
+    "Imagine a park where bunnies, dogs, cats and every other pet can play and run. Dream on.",
+    "A crew of pets, all in one place. That's the whole idea.",
+    "Every pet here was drawn by a human. The wobbly ones are our favourites.",
+    "Draw a dog. Draw a dragon. We won't tell the difference.",
+    "No leashes. No vet bills. Just vibes.",
+    "Somewhere in here, a stick-figure cat is making a new friend.",
+    "Your pet will wander, sit, sniff, and occasionally say hi.",
+    "Add a pet. Watch it find its people.",
+    "Warning: extremely low stakes ahead.",
+    "The more pets, the merrier the park. Bring a friend's pet too.",
+    "Part doodle, part daydream. All FurrCrew.",
+    "Every good crew starts with one pet showing up."
+  ];
+  function startTaglines(){
+    const el=document.getElementById("tagline");
+    let order=shuffle(TAGLINES.slice()), i=0;
+    el.textContent = order[0]; i=1;
+    setInterval(()=>{
+      el.classList.add("fade");
+      setTimeout(()=>{
+        if(i>=order.length){ order=shuffle(TAGLINES.slice()); i=0; }
+        el.textContent = order[i++];
+        el.classList.remove("fade");
+      },520);
+    },5500);
+  }
+  function shuffle(a){
+    for(let k=a.length-1;k>0;k--){const j=(Math.random()*(k+1))|0;[a[k],a[j]]=[a[j],a[k]];}
+    return a;
   }
 
   /* ============ Drawing modal ============ */
@@ -417,8 +475,7 @@
     if(c==="#ffffff") d.style.boxShadow="inset 0 0 0 1px rgba(0,0,0,.15)";
     d.addEventListener("click",()=>{
       color=c; erasing=false; document.getElementById("eraserBtn").classList.remove("active");
-      [...swWrap.children].forEach(x=>x.classList.remove("active"));
-      d.classList.add("active");
+      [...swWrap.children].forEach(x=>x.classList.remove("active")); d.classList.add("active");
     });
     swWrap.appendChild(d);
   });
@@ -445,21 +502,15 @@
     dctx.fillStyle="#efe9d8"; dctx.fillRect(0,0,DW,DH);
     hasDrawn=false;
   }
-  function pos(e){
-    const r=drawCv.getBoundingClientRect();
-    return {x:e.clientX-r.left, y:e.clientY-r.top};
-  }
+  function pos(e){ const r=drawCv.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
   function lineTo(p){
-    dctx.lineCap="round"; dctx.lineJoin="round";
-    dctx.lineWidth=brush;
+    dctx.lineCap="round"; dctx.lineJoin="round"; dctx.lineWidth=brush;
     dctx.strokeStyle = erasing ? "#efe9d8" : color;
-    dctx.lineTo(p.x,p.y); dctx.stroke();
-    dctx.beginPath(); dctx.moveTo(p.x,p.y);
+    dctx.lineTo(p.x,p.y); dctx.stroke(); dctx.beginPath(); dctx.moveTo(p.x,p.y);
   }
   drawCv.addEventListener("pointerdown",e=>{
     drawing=true; hasDrawn=true; const p=pos(e);
     dctx.beginPath(); dctx.moveTo(p.x,p.y);
-    // dot
     dctx.fillStyle=erasing?"#efe9d8":color;
     dctx.beginPath();dctx.arc(p.x,p.y,brush/2,0,Math.PI*2);dctx.fill();
     dctx.beginPath();dctx.moveTo(p.x,p.y);
@@ -468,20 +519,13 @@
   drawCv.addEventListener("pointermove",e=>{ if(drawing) lineTo(pos(e)); });
   window.addEventListener("pointerup",()=>{drawing=false;});
 
-  // export the pet image with transparent background (remove cream)
   function exportPet(){
-    // draw onto temp canvas, knock out the cream background -> transparent
-    const tmp=document.createElement("canvas");
-    tmp.width=200; tmp.height=200;
+    const tmp=document.createElement("canvas"); tmp.width=200; tmp.height=200;
     const tc=tmp.getContext("2d");
     tc.drawImage(drawCv,0,0,200,200);
-    const id=tc.getImageData(0,0,200,200);
-    const d=id.data;
-    // cream is #efe9d8 = 239,233,216
+    const id=tc.getImageData(0,0,200,200), d=id.data;
     for(let i=0;i<d.length;i+=4){
-      if(Math.abs(d[i]-239)<10 && Math.abs(d[i+1]-233)<10 && Math.abs(d[i+2]-216)<12){
-        d[i+3]=0;
-      }
+      if(Math.abs(d[i]-239)<10 && Math.abs(d[i+1]-233)<10 && Math.abs(d[i+2]-216)<12){ d[i+3]=0; }
     }
     tc.putImageData(id,0,0);
     return tmp.toDataURL("image/png");
@@ -503,22 +547,29 @@
     requestAnimationFrame(setupDrawCanvas);
   });
 
-  document.getElementById("releaseBtn").addEventListener("click",()=>{
+  const releaseBtn=document.getElementById("releaseBtn");
+  releaseBtn.addEventListener("click",async ()=>{
     const name=(document.getElementById("petName").value||"").trim() || "Mystery Pet";
     if(!hasDrawn){ flashName("Draw something first! 🎨"); return; }
-    const pet={ id:"p"+Date.now()+Math.floor(Math.random()*999), name, img:exportPet() };
-    pets.push(pet); savePets(pets);
-    buildActors();
-    // place newest near center with a little entrance
-    const a=actors.find(x=>x.id===pet.id);
-    if(a){ a.x=W/2; a.y=H*0.7; a.bubble="hello! 🐾"; a.bubbleT=110; pickTarget(a); }
-    refreshCountAndHint();
-    close("drawOverlay");
+    const draft={ name, img:exportPet() };
+    releaseBtn.disabled=true; releaseBtn.textContent="Releasing…";
+    try{
+      const saved = await storePet(draft);
+      pets.push(saved); syncActors();
+      const a=actors.find(x=>x.id===saved.id);
+      if(a){ a.x=W/2; a.y=H*0.7; a.bubble="hello! 🐾"; a.bubbleT=110; pickTarget(a); }
+      refreshCountAndHint();
+      close("drawOverlay");
+    }catch(err){
+      flashName("Couldn't reach the park — try again");
+    }finally{
+      releaseBtn.disabled=false; releaseBtn.textContent="Let it loose 🐾";
+    }
   });
   function flashName(msg){
     const inp=document.getElementById("petName");
     const old=inp.placeholder; inp.placeholder=msg; inp.style.borderColor="#c64b3b";
-    setTimeout(()=>{inp.placeholder=old;inp.style.borderColor="";},1600);
+    setTimeout(()=>{inp.placeholder=old;inp.style.borderColor="";},1800);
   }
 
   /* ============ Gallery ============ */
@@ -531,8 +582,7 @@
       empty.style.display="none";
       pets.slice().reverse().forEach(p=>{
         const c=document.createElement("div"); c.className="gcell";
-        const im=document.createElement("img"); im.src=p.img; im.alt=p.name;
-        im.style.background="#efe9d8";
+        const im=document.createElement("img"); im.src=p.img; im.alt=p.name; im.style.background="#efe9d8";
         const s=document.createElement("span"); s.textContent=p.name;
         c.appendChild(im); c.appendChild(s); grid.appendChild(c);
       });
@@ -540,37 +590,52 @@
     open("galOverlay");
   });
 
+  /* ============ Live refresh (shared mode) ============ */
+  async function pollNewPets(){
+    if(!REMOTE) return;
+    try{
+      const fresh = await fetchPets();
+      const have = {}; pets.forEach(p=>have[p.id]=true);
+      const added = fresh.filter(p=>!have[p.id]);
+      if(added.length){ pets = pets.concat(added); syncActors(); refreshCountAndHint(); }
+      statusDot.textContent = "● live";
+    }catch(e){ statusDot.textContent = "○ offline"; }
+  }
+
   /* ============ Boot ============ */
-  function boot(){
+  async function boot(){
     resize();
-    buildActors();
+    startTaglines();
+    if(REMOTE){
+      statusDot.textContent="● live";
+      try{ pets = await fetchPets(); }
+      catch(e){ statusDot.textContent="○ offline"; pets = localLoad(); }
+      setInterval(pollNewPets, 12000);
+    }else{
+      statusDot.textContent="◐ local";
+      pets = localLoad();
+      if(pets.length===0 && !localStorage.getItem("furrcrew_seeded")) seedDemo();
+    }
+    syncActors();
     refreshCountAndHint();
     requestAnimationFrame(loop);
   }
-  // seed a couple of demo pets on very first visit so the park isn't empty
-  if(pets.length===0 && !localStorage.getItem("furrcrew_seeded")){
-    seedDemo();
-  }
+
   function seedDemo(){
-    const mk=(draw)=>{
-      const c=document.createElement("canvas");c.width=200;c.height=200;
-      const x=c.getContext("2d"); draw(x); return c.toDataURL("image/png");
-    };
-    const dog=mk(x=>{
-      x.fillStyle="#6E4426";
-      x.beginPath();x.ellipse(100,120,46,34,0,0,7);x.fill();           // body
-      x.beginPath();x.arc(140,92,26,0,7);x.fill();                     // head
-      x.beginPath();x.ellipse(126,70,8,16,-0.4,0,7);x.fill();          // ear
-      x.beginPath();x.ellipse(156,70,8,16,0.4,0,7);x.fill();           // ear
-      x.fillStyle="#1B4D3A";x.beginPath();x.arc(150,94,3,0,7);x.fill();// eye
+    const mk=(draw)=>{ const c=document.createElement("canvas");c.width=200;c.height=200;
+      const x=c.getContext("2d"); draw(x); return c.toDataURL("image/png"); };
+    const dog=mk(x=>{ x.fillStyle="#6E4426";
+      x.beginPath();x.ellipse(100,120,46,34,0,0,7);x.fill();
+      x.beginPath();x.arc(140,92,26,0,7);x.fill();
+      x.beginPath();x.ellipse(126,70,8,16,-0.4,0,7);x.fill();
+      x.beginPath();x.ellipse(156,70,8,16,0.4,0,7);x.fill();
+      x.fillStyle="#1B4D3A";x.beginPath();x.arc(150,94,3,0,7);x.fill();
       x.beginPath();x.arc(132,94,3,0,7);x.fill();
       x.strokeStyle="#6E4426";x.lineWidth=7;x.lineCap="round";
-      x.beginPath();x.moveTo(60,118);x.lineTo(44,100);x.stroke();      // tail
+      x.beginPath();x.moveTo(60,118);x.lineTo(44,100);x.stroke();
       x.beginPath();x.moveTo(78,150);x.lineTo(78,168);x.stroke();
-      x.beginPath();x.moveTo(118,150);x.lineTo(118,168);x.stroke();
-    });
-    const cat=mk(x=>{
-      x.fillStyle="#1C3D70";
+      x.beginPath();x.moveTo(118,150);x.lineTo(118,168);x.stroke(); });
+    const cat=mk(x=>{ x.fillStyle="#1C3D70";
       x.beginPath();x.ellipse(100,122,40,30,0,0,7);x.fill();
       x.beginPath();x.arc(100,86,24,0,7);x.fill();
       x.beginPath();x.moveTo(82,70);x.lineTo(76,46);x.lineTo(96,64);x.fill();
@@ -578,25 +643,17 @@
       x.strokeStyle="#1C3D70";x.lineWidth=6;x.lineCap="round";
       x.beginPath();x.moveTo(138,124);x.quadraticCurveTo(168,116,160,90);x.stroke();
       x.fillStyle="#E5DCC3";x.beginPath();x.arc(92,86,3,0,7);x.fill();
-      x.beginPath();x.arc(108,86,3,0,7);x.fill();
-    });
-    const bun=mk(x=>{
-      x.fillStyle="#7a8b99";
+      x.beginPath();x.arc(108,86,3,0,7);x.fill(); });
+    const bun=mk(x=>{ x.fillStyle="#7a8b99";
       x.beginPath();x.ellipse(100,128,34,28,0,0,7);x.fill();
       x.beginPath();x.arc(100,96,20,0,7);x.fill();
       x.beginPath();x.ellipse(90,62,8,24,-0.15,0,7);x.fill();
       x.beginPath();x.ellipse(110,62,8,24,0.15,0,7);x.fill();
       x.fillStyle="#f4a6c0";x.beginPath();x.arc(100,100,3,0,7);x.fill();
       x.fillStyle="#1B4D3A";x.beginPath();x.arc(93,94,2.5,0,7);x.fill();
-      x.beginPath();x.arc(107,94,2.5,0,7);x.fill();
-    });
-    pets=[
-      {id:"seed1",name:"Biscuit",img:dog},
-      {id:"seed2",name:"Miso",img:cat},
-      {id:"seed3",name:"Cloud",img:bun}
-    ];
-    savePets(pets);
-    localStorage.setItem("furrcrew_seeded","1");
+      x.beginPath();x.arc(107,94,2.5,0,7);x.fill(); });
+    pets=[{id:"seed1",name:"Biscuit",img:dog},{id:"seed2",name:"Miso",img:cat},{id:"seed3",name:"Cloud",img:bun}];
+    localSaveAll(pets); localStorage.setItem("furrcrew_seeded","1");
   }
 
   boot();
