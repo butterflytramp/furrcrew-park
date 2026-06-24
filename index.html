@@ -45,7 +45,7 @@
     text-align:center;padding:12px 18px;min-height:44px;
     display:flex;align-items:center;justify-content:center;z-index:19;
   }
-  body.is-empty .tagline-bar{display:none;}
+  body.is-newcomer .tagline-bar{display:none;}
   #tagline{
     font-size:15px;line-height:1.35;font-weight:500;opacity:.95;
     transition:opacity .5s ease;max-width:680px;
@@ -58,10 +58,12 @@
   /* ---------- Hero tagline (big, shown when park is empty) ---------- */
   .hero{
     position:absolute;top:50%;left:50%;transform:translate(-50%,-60%);
-    width:88%;max-width:560px;text-align:center;color:var(--cream);
+    width:88%;max-width:540px;text-align:center;color:var(--cream);
     pointer-events:none;display:none;
+    background:rgba(20,58,44,.55);padding:22px 26px;border-radius:18px;
+    backdrop-filter:blur(2px);
   }
-  body.is-empty .hero{display:block;}
+  body.is-newcomer .hero{display:block;}
   #heroTagline{
     font-size:24px;line-height:1.32;font-weight:500;
     transition:opacity .5s ease;
@@ -99,7 +101,7 @@
     padding:9px 15px;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,.25);
     display:none;
   }
-  body.is-empty .cta-hint{display:block;}
+  body.is-newcomer .cta-hint{display:block;}
   .cta-arrow{
     position:absolute;top:100%;left:50%;transform:translateX(-50%);
     color:var(--cream);font-size:22px;line-height:0;margin-top:1px;
@@ -304,6 +306,7 @@
   }
 
   let pets = []; // {id,name,img}
+  let hasContributed = !!localStorage.getItem("furrcrew_contributed");
 
   /* ============ Park rendering ============ */
   const park = document.getElementById("park");
@@ -449,7 +452,9 @@
 
   function refreshCountAndHint(){
     countEl.textContent = pets.length + " in the crew";
-    document.body.classList.toggle("is-empty", pets.length===0);
+  }
+  function updateNewcomerState(){
+    document.body.classList.toggle("is-newcomer", !hasContributed);
   }
 
   /* ============ Rotating taglines ============ */
@@ -627,6 +632,8 @@
       pets.push(saved); syncActors();
       const a=actors.find(x=>x.id===saved.id);
       if(a){ a.x=W/2; a.y=H*0.7; a.bubble="hello! 🐾"; a.bubbleT=110; pickTarget(a); }
+      if(!hasContributed){ hasContributed=true; try{localStorage.setItem("furrcrew_contributed","1");}catch(e){} }
+      updateNewcomerState();
       refreshCountAndHint();
       close("drawOverlay");
     }catch(err){
@@ -686,6 +693,7 @@
       if(pets.length===0 && !localStorage.getItem("furrcrew_seeded")) seedDemo();
     }
     syncActors();
+    updateNewcomerState();
     refreshCountAndHint();
     requestAnimationFrame(loop);
   }
