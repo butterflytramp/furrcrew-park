@@ -39,14 +39,15 @@
   .logo sup{font-size:10px;opacity:.7;}
   .count{font-size:13px;color:var(--cream);opacity:.85;font-weight:600;}
 
-  /* ---------- Rotating tagline ---------- */
+  /* ---------- Rotating tagline (compact bar, shown when park is busy) ---------- */
   .tagline-bar{
     background:var(--green-deep);color:var(--cream);
-    text-align:center;padding:9px 18px;min-height:38px;
+    text-align:center;padding:12px 18px;min-height:44px;
     display:flex;align-items:center;justify-content:center;z-index:19;
   }
+  body.is-empty .tagline-bar{display:none;}
   #tagline{
-    font-size:13px;line-height:1.35;font-style:italic;opacity:.92;
+    font-size:15px;line-height:1.35;font-weight:500;opacity:.95;
     transition:opacity .5s ease;max-width:680px;
   }
   #tagline.fade{opacity:0;}
@@ -54,12 +55,18 @@
   /* ---------- Park ---------- */
   .park-screen{position:relative;flex:1;overflow:hidden;}
   #park{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;}
-  .empty-hint{
-    position:absolute;top:44%;left:50%;transform:translate(-50%,-50%);
-    color:var(--cream);text-align:center;pointer-events:none;
-    background:rgba(20,58,44,.35);padding:18px 26px;border-radius:16px;
-    font-size:15px;line-height:1.5;backdrop-filter:blur(2px);
+  /* ---------- Hero tagline (big, shown when park is empty) ---------- */
+  .hero{
+    position:absolute;top:50%;left:50%;transform:translate(-50%,-60%);
+    width:88%;max-width:560px;text-align:center;color:var(--cream);
+    pointer-events:none;display:none;
   }
+  body.is-empty .hero{display:block;}
+  #heroTagline{
+    font-size:24px;line-height:1.32;font-weight:500;
+    transition:opacity .5s ease;
+  }
+  #heroTagline.fade{opacity:0;}
   .status-dot{
     position:absolute;top:10px;right:14px;z-index:16;
     font-size:11px;color:var(--cream);opacity:.65;pointer-events:none;
@@ -84,6 +91,21 @@
   .btn-primary{background:var(--cream);color:var(--green);}
   .btn-primary:hover{background:var(--cream-light);}
   .btn-ghost{background:var(--brown);color:var(--cream);}
+  .add-wrap{position:relative;display:inline-flex;pointer-events:auto;}
+  .cta-hint{
+    position:absolute;bottom:100%;left:50%;transform:translateX(-50%);
+    margin-bottom:12px;white-space:nowrap;pointer-events:none;
+    background:var(--cream);color:var(--green);font-size:13px;font-weight:700;
+    padding:9px 15px;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,.25);
+    display:none;
+  }
+  body.is-empty .cta-hint{display:block;}
+  .cta-arrow{
+    position:absolute;top:100%;left:50%;transform:translateX(-50%);
+    color:var(--cream);font-size:22px;line-height:0;margin-top:1px;
+    animation:cta-bounce 1s ease-in-out infinite;
+  }
+  @keyframes cta-bounce{0%,100%{transform:translate(-50%,0);}50%{transform:translate(-50%,5px);}}
 
   /* ---------- Modal / overlay ---------- */
   .overlay{
@@ -164,11 +186,14 @@
   <div class="park-screen">
     <canvas id="park"></canvas>
     <div class="status-dot" id="statusDot"></div>
-    <div class="empty-hint" id="emptyHint">
-      🐾 The park is quiet.<br/>Draw a pet and let it loose!
+    <div class="hero" id="hero">
+      <div id="heroTagline">Imagine a park where bunnies, dogs, cats and every other pet can play and run. Dream on.</div>
     </div>
     <div class="actions">
-      <button class="btn btn-primary" id="addBtn">🎨 Add your pet</button>
+      <div class="add-wrap">
+        <div class="cta-hint">🐾 Draw a pet and let it loose<span class="cta-arrow">▾</span></div>
+        <button class="btn btn-primary" id="addBtn">🎨 Add your pet</button>
+      </div>
       <button class="btn btn-ghost" id="galBtn">🖼️ Gallery</button>
     </div>
   </div>
@@ -195,6 +220,7 @@
       </div>
     </div>
     <div class="tools" style="margin-top:0">
+      <button class="tool-btn" id="fillBtn">🪣 Fill</button>
       <button class="tool-btn" id="eraserBtn">🧽 Eraser</button>
       <button class="tool-btn" id="clearBtn">🗑️ Clear</button>
     </div>
@@ -282,7 +308,6 @@
   /* ============ Park rendering ============ */
   const park = document.getElementById("park");
   const pctx = park.getContext("2d");
-  const emptyHint = document.getElementById("emptyHint");
   const countEl = document.getElementById("count");
   const statusDot = document.getElementById("statusDot");
   let W=0,H=0,DPR=Math.min(window.devicePixelRatio||1,2);
@@ -424,7 +449,7 @@
 
   function refreshCountAndHint(){
     countEl.textContent = pets.length + " in the crew";
-    emptyHint.style.display = pets.length ? "none":"block";
+    document.body.classList.toggle("is-empty", pets.length===0);
   }
 
   /* ============ Rotating taglines ============ */
@@ -443,15 +468,17 @@
     "Every good crew starts with one pet showing up."
   ];
   function startTaglines(){
-    const el=document.getElementById("tagline");
+    const bar=document.getElementById("tagline");
+    const hero=document.getElementById("heroTagline");
+    function setLine(t){ bar.textContent=t; hero.textContent=t; }
     let order=shuffle(TAGLINES.slice()), i=0;
-    el.textContent = order[0]; i=1;
+    setLine(TAGLINES[0]); // open on the signature line
     setInterval(()=>{
-      el.classList.add("fade");
+      bar.classList.add("fade"); hero.classList.add("fade");
       setTimeout(()=>{
         if(i>=order.length){ order=shuffle(TAGLINES.slice()); i=0; }
-        el.textContent = order[i++];
-        el.classList.remove("fade");
+        setLine(order[i++]);
+        bar.classList.remove("fade"); hero.classList.remove("fade");
       },520);
     },5500);
   }
@@ -464,7 +491,7 @@
   const drawCv=document.getElementById("draw");
   const dctx=drawCv.getContext("2d");
   let DW=0,DH=0;
-  let drawing=false, color=PAL.green, brush=9, erasing=false, hasDrawn=false;
+  let drawing=false, color=PAL.green, brush=9, erasing=false, filling=false, hasDrawn=false;
 
   const palette=["#1B4D3A","#6E4426","#1C3D70","#000000","#d98a3a","#e7c14b","#c64b3b","#ffffff","#7a8b99","#f4a6c0"];
   const swWrap=document.getElementById("swatches");
@@ -485,8 +512,15 @@
       s.classList.add("active"); brush=+s.dataset.size;
     });
   });
-  document.getElementById("eraserBtn").addEventListener("click",function(){
+  const fillBtn=document.getElementById("fillBtn");
+  const eraserBtn=document.getElementById("eraserBtn");
+  eraserBtn.addEventListener("click",function(){
     erasing=!erasing; this.classList.toggle("active",erasing);
+    if(erasing){ filling=false; fillBtn.classList.remove("active"); }
+  });
+  fillBtn.addEventListener("click",function(){
+    filling=!filling; this.classList.toggle("active",filling);
+    if(filling){ erasing=false; eraserBtn.classList.remove("active"); }
   });
   document.getElementById("clearBtn").addEventListener("click",clearCanvas);
 
@@ -509,13 +543,48 @@
     dctx.lineTo(p.x,p.y); dctx.stroke(); dctx.beginPath(); dctx.moveTo(p.x,p.y);
   }
   drawCv.addEventListener("pointerdown",e=>{
-    drawing=true; hasDrawn=true; const p=pos(e);
+    const p=pos(e);
+    if(filling){ floodFill(p.x,p.y); hasDrawn=true; return; }
+    drawing=true; hasDrawn=true;
     dctx.beginPath(); dctx.moveTo(p.x,p.y);
     dctx.fillStyle=erasing?"#efe9d8":color;
     dctx.beginPath();dctx.arc(p.x,p.y,brush/2,0,Math.PI*2);dctx.fill();
     dctx.beginPath();dctx.moveTo(p.x,p.y);
     drawCv.setPointerCapture(e.pointerId);
   });
+
+  function hexToRgb(h){
+    h=h.replace("#",""); if(h.length===3) h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    return {r:parseInt(h.slice(0,2),16),g:parseInt(h.slice(2,4),16),b:parseInt(h.slice(4,6),16)};
+  }
+  function floodFill(cssX,cssY){
+    const w=drawCv.width, h=drawCv.height;          // device pixels
+    const sx=Math.floor(cssX*DPR), sy=Math.floor(cssY*DPR);
+    if(sx<0||sy<0||sx>=w||sy>=h) return;
+    const img=dctx.getImageData(0,0,w,h), d=img.data;
+    const s=(sy*w+sx)*4;
+    const tr=d[s],tg=d[s+1],tb=d[s+2],ta=d[s+3];
+    const fc=hexToRgb(color);
+    if(tr===fc.r && tg===fc.g && tb===fc.b && ta===255) return; // already that colour
+    const tol=42;
+    const match=i=> Math.abs(d[i]-tr)<=tol && Math.abs(d[i+1]-tg)<=tol &&
+                    Math.abs(d[i+2]-tb)<=tol && Math.abs(d[i+3]-ta)<=tol;
+    const visited=new Uint8Array(w*h);
+    const stack=[sy*w+sx];
+    while(stack.length){
+      const pi=stack.pop();
+      if(visited[pi]) continue; visited[pi]=1;
+      const i=pi*4;
+      if(!match(i)) continue;
+      d[i]=fc.r; d[i+1]=fc.g; d[i+2]=fc.b; d[i+3]=255;
+      const x=pi%w, y=(pi-x)/w;
+      if(x>0) stack.push(pi-1);
+      if(x<w-1) stack.push(pi+1);
+      if(y>0) stack.push(pi-w);
+      if(y<h-1) stack.push(pi+w);
+    }
+    dctx.putImageData(img,0,0);
+  }
   drawCv.addEventListener("pointermove",e=>{ if(drawing) lineTo(pos(e)); });
   window.addEventListener("pointerup",()=>{drawing=false;});
 
