@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>FurrCrew Park</title>
+<meta name="description" content="Draw your pet and let it loose in the park. A crew of pets, all in one place." />
+<style>
+  :root{
+    --green:#1B4D3A;
+    --green-deep:#143a2c;
+    --cream:#E5DCC3;
+    --cream-light:#efe9d8;
+    --brown:#6E4426;
+    --navy:#1C3D70;
+    --ink:#143a2c;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;}
+  body{
+    font-family:"Trebuchet MS","Segoe UI",system-ui,sans-serif;
+    color:var(--green);
+    background:var(--green);
+    overflow:hidden;
+    user-select:none;
+  }
+  .wrap{position:fixed;inset:0;display:flex;flex-direction:column;}
+
+  /* ---------- Top bar ---------- */
+  header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:14px 18px;
+    background:var(--green);
+    color:var(--cream);
+    z-index:20;
+  }
+  .logo{font-weight:800;letter-spacing:2px;font-size:20px;display:flex;align-items:center;gap:8px;}
+  .logo .paw{font-size:18px;}
+  .logo sup{font-size:10px;opacity:.7;}
+  .count{font-size:13px;color:var(--cream);opacity:.85;font-weight:600;}
+
+  /* ---------- Park ---------- */
+  .park-screen{position:relative;flex:1;overflow:hidden;}
+  #park{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;}
+  .empty-hint{
+    position:absolute;top:46%;left:50%;transform:translate(-50%,-50%);
+    color:var(--cream);text-align:center;pointer-events:none;
+    background:rgba(20,58,44,.35);padding:18px 26px;border-radius:16px;
+    font-size:15px;line-height:1.5;backdrop-filter:blur(2px);
+  }
+
+  /* ---------- Bottom action bar ---------- */
+  .actions{
+    position:absolute;left:0;right:0;bottom:0;
+    display:flex;gap:12px;justify-content:center;
+    padding:16px;z-index:15;pointer-events:none;
+  }
+  .btn{
+    pointer-events:auto;
+    border:none;border-radius:999px;
+    padding:14px 24px;font-size:15px;font-weight:700;letter-spacing:.3px;
+    cursor:pointer;transition:transform .12s ease,box-shadow .12s ease,background .15s;
+    box-shadow:0 6px 18px rgba(0,0,0,.22);
+    display:inline-flex;align-items:center;gap:8px;
+  }
+  .btn:active{transform:translateY(2px) scale(.98);}
+  .btn-primary{background:var(--cream);color:var(--green);}
+  .btn-primary:hover{background:var(--cream-light);}
+  .btn-ghost{background:var(--brown);color:var(--cream);}
+  .btn-navy{background:var(--navy);color:var(--cream);}
+
+  /* ---------- Modal / overlay ---------- */
+  .overlay{
+    position:fixed;inset:0;z-index:50;
+    background:rgba(20,58,44,.55);backdrop-filter:blur(3px);
+    display:none;align-items:center;justify-content:center;padding:16px;
+  }
+  .overlay.show{display:flex;}
+  .card{
+    background:var(--cream);border-radius:22px;
+    width:100%;max-width:420px;max-height:94vh;overflow:auto;
+    box-shadow:0 24px 60px rgba(0,0,0,.35);
+    padding:20px;
+  }
+  .card h2{margin:0 0 4px;color:var(--green);font-size:22px;letter-spacing:.5px;}
+  .card p.sub{margin:0 0 14px;color:var(--brown);font-size:13px;}
+
+  .canvas-frame{
+    position:relative;width:100%;aspect-ratio:1/1;border-radius:16px;overflow:hidden;
+    background:var(--cream-light);
+    border:3px dashed rgba(110,68,38,.4);
+    touch-action:none;
+  }
+  #draw{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;}
+
+  .tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:14px 0;}
+  .swatches{display:flex;gap:7px;flex-wrap:wrap;}
+  .sw{width:30px;height:30px;border-radius:50%;cursor:pointer;border:3px solid transparent;transition:transform .1s;}
+  .sw:active{transform:scale(.9);}
+  .sw.active{border-color:var(--green);box-shadow:0 0 0 2px var(--cream);}
+  .sizes{display:flex;gap:6px;margin-left:auto;}
+  .size{width:34px;height:34px;border-radius:10px;background:var(--cream-light);
+    border:2px solid rgba(110,68,38,.25);display:grid;place-items:center;cursor:pointer;}
+  .size.active{border-color:var(--green);background:#fff;}
+  .size i{display:block;border-radius:50%;background:var(--ink);}
+  .tool-btn{
+    background:var(--cream-light);border:2px solid rgba(110,68,38,.25);
+    border-radius:10px;padding:8px 12px;font-weight:700;color:var(--brown);
+    cursor:pointer;font-size:13px;
+  }
+  .tool-btn.active{border-color:var(--green);color:var(--green);background:#fff;}
+
+  .name-row{display:flex;gap:10px;margin:6px 0 16px;}
+  .name-row input{
+    flex:1;padding:13px 14px;border-radius:12px;border:2px solid rgba(110,68,38,.3);
+    font-size:16px;font-family:inherit;color:var(--green);background:#fff;outline:none;
+  }
+  .name-row input:focus{border-color:var(--green);}
+
+  .row-btns{display:flex;gap:10px;}
+  .row-btns .btn{flex:1;justify-content:center;box-shadow:none;}
+  .btn-release{background:var(--green);color:var(--cream);}
+  .btn-cancel{background:transparent;color:var(--brown);border:2px solid rgba(110,68,38,.3);}
+
+  /* ---------- Gallery ---------- */
+  .gallery-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:8px;}
+  .gcell{background:var(--cream-light);border-radius:14px;padding:8px;text-align:center;}
+  .gcell img{width:100%;border-radius:10px;display:block;background:#fff;}
+  .gcell span{display:block;margin-top:6px;font-size:12px;font-weight:700;color:var(--green);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .gallery-empty{color:var(--brown);text-align:center;padding:30px 0;font-size:14px;}
+
+  .close-x{float:right;background:none;border:none;font-size:24px;color:var(--brown);cursor:pointer;line-height:1;margin:-4px -4px 0 0;}
+  .tag{display:inline-block;background:var(--navy);color:var(--cream);font-size:11px;font-weight:700;
+    padding:3px 9px;border-radius:999px;margin-bottom:10px;letter-spacing:.5px;}
+  .speech{position:absolute;pointer-events:none;font-size:12px;font-weight:700;
+    background:var(--cream);color:var(--green);padding:3px 9px;border-radius:999px;
+    box-shadow:0 3px 10px rgba(0,0,0,.2);transform:translate(-50%,-100%);white-space:nowrap;}
+  footer-note{}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><span class="paw">🐾</span>FURRCREW <sup>™</sup></div>
+    <div class="count" id="count">0 in the crew</div>
+  </header>
+
+  <div class="park-screen">
+    <canvas id="park"></canvas>
+    <div class="empty-hint" id="emptyHint">
+      🐾 The park is quiet.<br/>Draw a pet and let it loose!
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" id="addBtn">🎨 Add your pet</button>
+      <button class="btn btn-ghost" id="galBtn">🖼️ Gallery</button>
+    </div>
+  </div>
+</div>
+
+<!-- Draw modal -->
+<div class="overlay" id="drawOverlay">
+  <div class="card">
+    <button class="close-x" data-close="drawOverlay">×</button>
+    <span class="tag">NEW CREW MEMBER</span>
+    <h2>Draw your pet</h2>
+    <p class="sub">Cat, dog, bunny, dragon — anything goes. Keep it simple!</p>
+
+    <div class="canvas-frame">
+      <canvas id="draw"></canvas>
+    </div>
+
+    <div class="tools">
+      <div class="swatches" id="swatches"></div>
+      <div class="sizes" id="sizes">
+        <div class="size" data-size="4"><i style="width:5px;height:5px"></i></div>
+        <div class="size active" data-size="9"><i style="width:10px;height:10px"></i></div>
+        <div class="size" data-size="16"><i style="width:17px;height:17px"></i></div>
+      </div>
+    </div>
+    <div class="tools" style="margin-top:0">
+      <button class="tool-btn" id="eraserBtn">🧽 Eraser</button>
+      <button class="tool-btn" id="clearBtn">🗑️ Clear</button>
+    </div>
+
+    <div class="name-row">
+      <input id="petName" maxlength="16" placeholder="Name your pet…" />
+    </div>
+
+    <div class="row-btns">
+      <button class="btn btn-cancel" data-close="drawOverlay">Cancel</button>
+      <button class="btn btn-release" id="releaseBtn">Let it loose 🐾</button>
+    </div>
+  </div>
+</div>
+
+<!-- Gallery modal -->
+<div class="overlay" id="galOverlay">
+  <div class="card">
+    <button class="close-x" data-close="galOverlay">×</button>
+    <span class="tag">THE WHOLE CREW</span>
+    <h2 style="margin-bottom:10px">Gallery</h2>
+    <div id="galleryGrid" class="gallery-grid"></div>
+    <div id="galleryEmpty" class="gallery-empty">No pets yet — be the first!</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const STORE_KEY = "furrcrew_park_v1";
+  const PAL = {green:"#1B4D3A",cream:"#E5DCC3",brown:"#6E4426",navy:"#1C3D70"};
+
+  /* ============ Storage ============ */
+  function loadPets(){
+    try{ return JSON.parse(localStorage.getItem(STORE_KEY)) || []; }
+    catch(e){ return []; }
+  }
+  function savePets(arr){
+    try{ localStorage.setItem(STORE_KEY, JSON.stringify(arr)); }catch(e){}
+  }
+  let pets = loadPets(); // {id,name,img(dataURL)}
+
+  /* ============ Park rendering ============ */
+  const park = document.getElementById("park");
+  const pctx = park.getContext("2d");
+  const emptyHint = document.getElementById("emptyHint");
+  const countEl = document.getElementById("count");
+  let W=0,H=0,DPR=Math.min(window.devicePixelRatio||1,2);
+
+  // live actor objects (sprite + behaviour), built from pets
+  let actors = [];
+  const imgCache = {};
+
+  function makeImg(src){
+    if(imgCache[src]) return imgCache[src];
+    const im = new Image(); im.src = src; imgCache[src]=im; return im;
+  }
+
+  function buildActors(){
+    actors = pets.map(p=>{
+      const existing = actors.find(a=>a.id===p.id);
+      if(existing) return existing;
+      return {
+        id:p.id, name:p.name, img:makeImg(p.img),
+        x:Math.random()*Math.max(W-120,120)+60,
+        y:Math.random()*Math.max(H-260,160)+120,
+        tx:0,ty:0, state:"walk", t:Math.random()*100,
+        timer:rand(60,200), facing:1, size:64,
+        bubble:null, bubbleT:0
+      };
+    });
+    actors.forEach(pickTarget);
+  }
+  function rand(a,b){return a+Math.random()*(b-a);}
+  function pickTarget(a){
+    a.tx = rand(70, Math.max(W-70,80));
+    a.ty = rand(140, Math.max(H-120,160));
+  }
+
+  function resize(){
+    const r = park.getBoundingClientRect();
+    W=r.width; H=r.height;
+    park.width=W*DPR; park.height=H*DPR;
+    pctx.setTransform(DPR,0,0,DPR,0,0);
+  }
+  window.addEventListener("resize",resize);
+
+  /* ground / scenery drawn each frame */
+  function drawGround(){
+    // sky-ish top band (cream) to ground (green) — subtle gradient
+    const g = pctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,"#246149");
+    g.addColorStop(1,"#163b2c");
+    pctx.fillStyle=g; pctx.fillRect(0,0,W,H);
+
+    // soft path
+    pctx.fillStyle="rgba(229,220,195,.10)";
+    pctx.beginPath();
+    pctx.ellipse(W*0.5,H*0.78,W*0.46,H*0.16,0,0,Math.PI*2);
+    pctx.fill();
+
+    // scattered bushes (deterministic-ish)
+    pctx.fillStyle="rgba(20,58,44,.55)";
+    const spots=[[0.12,0.32],[0.85,0.28],[0.7,0.6],[0.22,0.7],[0.5,0.4],[0.93,0.7]];
+    spots.forEach((s,i)=>{
+      const x=s[0]*W, y=s[1]*H, rr=14+((i*7)%10);
+      pctx.beginPath();
+      pctx.arc(x,y,rr,0,Math.PI*2);
+      pctx.arc(x+rr*0.7,y+2,rr*0.8,0,Math.PI*2);
+      pctx.arc(x-rr*0.7,y+2,rr*0.8,0,Math.PI*2);
+      pctx.fill();
+    });
+  }
+
+  function step(a, dt){
+    a.t += dt;
+    a.timer -= 1;
+    if(a.state==="walk"){
+      const dx=a.tx-a.x, dy=a.ty-a.y;
+      const d=Math.hypot(dx,dy);
+      if(d<6 || a.timer<=0){
+        a.state = Math.random()<0.45 ? "sit" : "sniff";
+        a.timer = rand(50,160);
+        if(a.state==="sniff"){ a.bubble="*sniff*"; a.bubbleT=70; }
+      } else {
+        const sp=0.7;
+        a.x += (dx/d)*sp; a.y += (dy/d)*sp;
+        a.facing = dx<0 ? -1 : 1;
+      }
+    } else { // sit or sniff
+      if(a.timer<=0){
+        a.state="walk"; pickTarget(a); a.timer=rand(80,220);
+      }
+    }
+    // greet nearby pets
+    for(const b of actors){
+      if(b===a) continue;
+      if(Math.hypot(b.x-a.x,b.y-a.y)<54 && a.bubbleT<=0 && Math.random()<0.012){
+        a.bubble = pickGreeting(); a.bubbleT=80;
+        a.facing = b.x<a.x ? -1:1;
+      }
+    }
+    if(a.bubbleT>0) a.bubbleT--; else a.bubble=null;
+  }
+  const greetings=["hi! 🐾","woof","sniff sniff","mrrp","new friend!","♥","let's play"];
+  function pickGreeting(){return greetings[(Math.random()*greetings.length)|0];}
+
+  function drawActor(a){
+    const bob = (a.state==="walk") ? Math.sin(a.t*0.18)*3 : Math.sin(a.t*0.05)*1.2;
+    const squashSit = a.state==="sit" ? 0.9 : 1;
+    const s=a.size;
+    pctx.save();
+    pctx.translate(a.x, a.y+bob);
+    // shadow
+    pctx.save();
+    pctx.translate(0, s*0.42);
+    pctx.scale(1,0.35);
+    pctx.fillStyle="rgba(0,0,0,.22)";
+    pctx.beginPath();pctx.arc(0,0,s*0.34,0,Math.PI*2);pctx.fill();
+    pctx.restore();
+    // sprite
+    pctx.scale(a.facing,1);
+    if(a.img.complete && a.img.naturalWidth){
+      pctx.drawImage(a.img, -s/2, -s*squashSit/2 - s*0.18, s, s*squashSit);
+    }
+    pctx.restore();
+    // name tag
+    pctx.save();
+    pctx.font="600 11px 'Trebuchet MS',sans-serif";
+    pctx.textAlign="center";
+    const tw=pctx.measureText(a.name).width+12;
+    pctx.fillStyle="rgba(20,58,44,.78)";
+    roundRect(pctx, a.x-tw/2, a.y+s*0.30, tw, 16, 8); pctx.fill();
+    pctx.fillStyle=PAL.cream;
+    pctx.fillText(a.name, a.x, a.y+s*0.30+12);
+    pctx.restore();
+    // speech bubble
+    if(a.bubble){
+      pctx.save();
+      pctx.font="700 11px 'Trebuchet MS',sans-serif";
+      pctx.textAlign="center";
+      const bw=pctx.measureText(a.bubble).width+16;
+      const by=a.y - s*0.55 + bob;
+      pctx.fillStyle=PAL.cream;
+      roundRect(pctx, a.x-bw/2, by-16, bw, 18, 9); pctx.fill();
+      pctx.fillStyle=PAL.green;
+      pctx.fillText(a.bubble, a.x, by-3);
+      pctx.restore();
+    }
+  }
+  function roundRect(c,x,y,w,h,r){
+    c.beginPath();
+    c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);
+    c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();
+  }
+
+  let last=performance.now();
+  function loop(now){
+    const dt=Math.min((now-last)/16.67,3); last=now;
+    drawGround();
+    // sort by y for depth
+    actors.sort((p,q)=>p.y-q.y);
+    for(const a of actors){ step(a,dt); drawActor(a); }
+    requestAnimationFrame(loop);
+  }
+
+  // tap a pet to make it react
+  park.addEventListener("pointerdown",e=>{
+    const r=park.getBoundingClientRect();
+    const x=e.clientX-r.left, y=e.clientY-r.top;
+    let nearest=null,nd=1e9;
+    for(const a of actors){const d=Math.hypot(a.x-x,a.y-y); if(d<nd){nd=d;nearest=a;}}
+    if(nearest && nd<46){
+      nearest.bubble = Math.random()<0.5 ? "♥" : pickGreeting();
+      nearest.bubbleT=80; nearest.state="sit"; nearest.timer=60;
+    }
+  });
+
+  function refreshCountAndHint(){
+    countEl.textContent = pets.length + (pets.length===1?" in the crew":" in the crew");
+    emptyHint.style.display = pets.length? "none":"block";
+  }
+
+  /* ============ Drawing modal ============ */
+  const drawCv=document.getElementById("draw");
+  const dctx=drawCv.getContext("2d");
+  let DW=0,DH=0;
+  let drawing=false, color=PAL.green, brush=9, erasing=false, hasDrawn=false;
+
+  const palette=["#1B4D3A","#6E4426","#1C3D70","#000000","#d98a3a","#e7c14b","#c64b3b","#ffffff","#7a8b99","#f4a6c0"];
+  const swWrap=document.getElementById("swatches");
+  palette.forEach((c,i)=>{
+    const d=document.createElement("div");
+    d.className="sw"+(i===0?" active":"");
+    d.style.background=c;
+    if(c==="#ffffff") d.style.boxShadow="inset 0 0 0 1px rgba(0,0,0,.15)";
+    d.addEventListener("click",()=>{
+      color=c; erasing=false; document.getElementById("eraserBtn").classList.remove("active");
+      [...swWrap.children].forEach(x=>x.classList.remove("active"));
+      d.classList.add("active");
+    });
+    swWrap.appendChild(d);
+  });
+  document.querySelectorAll(".size").forEach(s=>{
+    s.addEventListener("click",()=>{
+      document.querySelectorAll(".size").forEach(x=>x.classList.remove("active"));
+      s.classList.add("active"); brush=+s.dataset.size;
+    });
+  });
+  document.getElementById("eraserBtn").addEventListener("click",function(){
+    erasing=!erasing; this.classList.toggle("active",erasing);
+  });
+  document.getElementById("clearBtn").addEventListener("click",clearCanvas);
+
+  function setupDrawCanvas(){
+    const r=drawCv.getBoundingClientRect();
+    DW=r.width; DH=r.height;
+    drawCv.width=DW*DPR; drawCv.height=DH*DPR;
+    dctx.setTransform(DPR,0,0,DPR,0,0);
+    clearCanvas();
+  }
+  function clearCanvas(){
+    dctx.clearRect(0,0,DW,DH);
+    dctx.fillStyle="#efe9d8"; dctx.fillRect(0,0,DW,DH);
+    hasDrawn=false;
+  }
+  function pos(e){
+    const r=drawCv.getBoundingClientRect();
+    return {x:e.clientX-r.left, y:e.clientY-r.top};
+  }
+  function lineTo(p){
+    dctx.lineCap="round"; dctx.lineJoin="round";
+    dctx.lineWidth=brush;
+    dctx.strokeStyle = erasing ? "#efe9d8" : color;
+    dctx.lineTo(p.x,p.y); dctx.stroke();
+    dctx.beginPath(); dctx.moveTo(p.x,p.y);
+  }
+  drawCv.addEventListener("pointerdown",e=>{
+    drawing=true; hasDrawn=true; const p=pos(e);
+    dctx.beginPath(); dctx.moveTo(p.x,p.y);
+    // dot
+    dctx.fillStyle=erasing?"#efe9d8":color;
+    dctx.beginPath();dctx.arc(p.x,p.y,brush/2,0,Math.PI*2);dctx.fill();
+    dctx.beginPath();dctx.moveTo(p.x,p.y);
+    drawCv.setPointerCapture(e.pointerId);
+  });
+  drawCv.addEventListener("pointermove",e=>{ if(drawing) lineTo(pos(e)); });
+  window.addEventListener("pointerup",()=>{drawing=false;});
+
+  // export the pet image with transparent background (remove cream)
+  function exportPet(){
+    // draw onto temp canvas, knock out the cream background -> transparent
+    const tmp=document.createElement("canvas");
+    tmp.width=200; tmp.height=200;
+    const tc=tmp.getContext("2d");
+    tc.drawImage(drawCv,0,0,200,200);
+    const id=tc.getImageData(0,0,200,200);
+    const d=id.data;
+    // cream is #efe9d8 = 239,233,216
+    for(let i=0;i<d.length;i+=4){
+      if(Math.abs(d[i]-239)<10 && Math.abs(d[i+1]-233)<10 && Math.abs(d[i+2]-216)<12){
+        d[i+3]=0;
+      }
+    }
+    tc.putImageData(id,0,0);
+    return tmp.toDataURL("image/png");
+  }
+
+  /* ============ Modal wiring ============ */
+  function open(id){ document.getElementById(id).classList.add("show"); }
+  function close(id){ document.getElementById(id).classList.remove("show"); }
+  document.querySelectorAll("[data-close]").forEach(b=>{
+    b.addEventListener("click",()=>close(b.dataset.close));
+  });
+  document.querySelectorAll(".overlay").forEach(o=>{
+    o.addEventListener("click",e=>{ if(e.target===o) close(o.id); });
+  });
+
+  document.getElementById("addBtn").addEventListener("click",()=>{
+    open("drawOverlay");
+    document.getElementById("petName").value="";
+    requestAnimationFrame(setupDrawCanvas);
+  });
+
+  document.getElementById("releaseBtn").addEventListener("click",()=>{
+    const name=(document.getElementById("petName").value||"").trim() || "Mystery Pet";
+    if(!hasDrawn){ flashName("Draw something first! 🎨"); return; }
+    const pet={ id:"p"+Date.now()+Math.floor(Math.random()*999), name, img:exportPet() };
+    pets.push(pet); savePets(pets);
+    buildActors();
+    // place newest near center with a little entrance
+    const a=actors.find(x=>x.id===pet.id);
+    if(a){ a.x=W/2; a.y=H*0.7; a.bubble="hello! 🐾"; a.bubbleT=110; pickTarget(a); }
+    refreshCountAndHint();
+    close("drawOverlay");
+  });
+  function flashName(msg){
+    const inp=document.getElementById("petName");
+    const old=inp.placeholder; inp.placeholder=msg; inp.style.borderColor="#c64b3b";
+    setTimeout(()=>{inp.placeholder=old;inp.style.borderColor="";},1600);
+  }
+
+  /* ============ Gallery ============ */
+  document.getElementById("galBtn").addEventListener("click",()=>{
+    const grid=document.getElementById("galleryGrid");
+    const empty=document.getElementById("galleryEmpty");
+    grid.innerHTML="";
+    if(!pets.length){ empty.style.display="block"; }
+    else{
+      empty.style.display="none";
+      pets.slice().reverse().forEach(p=>{
+        const c=document.createElement("div"); c.className="gcell";
+        const im=document.createElement("img"); im.src=p.img; im.alt=p.name;
+        im.style.background="#efe9d8";
+        const s=document.createElement("span"); s.textContent=p.name;
+        c.appendChild(im); c.appendChild(s); grid.appendChild(c);
+      });
+    }
+    open("galOverlay");
+  });
+
+  /* ============ Boot ============ */
+  function boot(){
+    resize();
+    buildActors();
+    refreshCountAndHint();
+    requestAnimationFrame(loop);
+  }
+  // seed a couple of demo pets on very first visit so the park isn't empty
+  if(pets.length===0 && !localStorage.getItem("furrcrew_seeded")){
+    seedDemo();
+  }
+  function seedDemo(){
+    const mk=(draw)=>{
+      const c=document.createElement("canvas");c.width=200;c.height=200;
+      const x=c.getContext("2d"); draw(x); return c.toDataURL("image/png");
+    };
+    const dog=mk(x=>{
+      x.fillStyle="#6E4426";
+      x.beginPath();x.ellipse(100,120,46,34,0,0,7);x.fill();           // body
+      x.beginPath();x.arc(140,92,26,0,7);x.fill();                     // head
+      x.beginPath();x.ellipse(126,70,8,16,-0.4,0,7);x.fill();          // ear
+      x.beginPath();x.ellipse(156,70,8,16,0.4,0,7);x.fill();           // ear
+      x.fillStyle="#1B4D3A";x.beginPath();x.arc(150,94,3,0,7);x.fill();// eye
+      x.beginPath();x.arc(132,94,3,0,7);x.fill();
+      x.strokeStyle="#6E4426";x.lineWidth=7;x.lineCap="round";
+      x.beginPath();x.moveTo(60,118);x.lineTo(44,100);x.stroke();      // tail
+      x.beginPath();x.moveTo(78,150);x.lineTo(78,168);x.stroke();
+      x.beginPath();x.moveTo(118,150);x.lineTo(118,168);x.stroke();
+    });
+    const cat=mk(x=>{
+      x.fillStyle="#1C3D70";
+      x.beginPath();x.ellipse(100,122,40,30,0,0,7);x.fill();
+      x.beginPath();x.arc(100,86,24,0,7);x.fill();
+      x.beginPath();x.moveTo(82,70);x.lineTo(76,46);x.lineTo(96,64);x.fill();
+      x.beginPath();x.moveTo(118,70);x.lineTo(124,46);x.lineTo(104,64);x.fill();
+      x.strokeStyle="#1C3D70";x.lineWidth=6;x.lineCap="round";
+      x.beginPath();x.moveTo(138,124);x.quadraticCurveTo(168,116,160,90);x.stroke();
+      x.fillStyle="#E5DCC3";x.beginPath();x.arc(92,86,3,0,7);x.fill();
+      x.beginPath();x.arc(108,86,3,0,7);x.fill();
+    });
+    const bun=mk(x=>{
+      x.fillStyle="#7a8b99";
+      x.beginPath();x.ellipse(100,128,34,28,0,0,7);x.fill();
+      x.beginPath();x.arc(100,96,20,0,7);x.fill();
+      x.beginPath();x.ellipse(90,62,8,24,-0.15,0,7);x.fill();
+      x.beginPath();x.ellipse(110,62,8,24,0.15,0,7);x.fill();
+      x.fillStyle="#f4a6c0";x.beginPath();x.arc(100,100,3,0,7);x.fill();
+      x.fillStyle="#1B4D3A";x.beginPath();x.arc(93,94,2.5,0,7);x.fill();
+      x.beginPath();x.arc(107,94,2.5,0,7);x.fill();
+    });
+    pets=[
+      {id:"seed1",name:"Biscuit",img:dog},
+      {id:"seed2",name:"Miso",img:cat},
+      {id:"seed3",name:"Cloud",img:bun}
+    ];
+    savePets(pets);
+    localStorage.setItem("furrcrew_seeded","1");
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>

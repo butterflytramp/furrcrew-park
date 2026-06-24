@@ -1,0 +1,12 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Dependencies (none currently, but future-proofing)
+node_modules/
+
+# Vercel
+.vercel
