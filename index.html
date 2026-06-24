@@ -149,6 +149,15 @@
   .photo-drop input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;}
   .drop-cta{color:var(--brown);font-weight:700;font-size:15px;}
   .drop-sub{color:var(--brown);opacity:.7;font-size:12px;margin-top:6px;}
+  .photo-busy{text-align:center;padding:34px 22px;color:var(--brown);font-weight:700;font-size:15px;
+    border:3px dashed rgba(110,68,38,.4);border-radius:16px;background:var(--cream-light);}
+  .busy-sub{font-size:12px;font-weight:400;opacity:.7;margin-top:8px;}
+  .busy-dot{display:inline-block;animation:busyPulse 1s ease-in-out infinite;}
+  @keyframes busyPulse{0%,100%{opacity:.3;}50%{opacity:1;}}
+  .spinner{width:36px;height:36px;border-radius:50%;margin:0 auto 16px;
+    border:4px solid rgba(110,68,38,.22);border-top-color:var(--green);
+    animation:spin .8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
   .crop-frame{position:relative;width:240px;max-width:100%;aspect-ratio:1;margin:0 auto;
     border-radius:14px;overflow:hidden;background:rgba(20,58,44,.15);touch-action:none;}
   .crop-frame canvas{position:absolute;inset:0;width:100%;height:100%;}
@@ -248,7 +257,12 @@
       <div class="photo-drop" id="photoEmpty">
         <input type="file" id="photoInput" accept="image/*" />
         <div class="drop-cta">📷 Tap to choose a photo of your pet</div>
-        <div class="drop-sub">We turn its face into a sticker, right here on your device.</div>
+        <div class="drop-sub">We cut out its face into a sticker, right here on your device.</div>
+      </div>
+      <div id="photoBusy" class="photo-busy" hidden>
+        <div class="spinner"></div>
+        ✨ Cutting out your pet<span class="busy-dot">…</span>
+        <div class="busy-sub">First photo takes a few seconds to load the magic. It all stays on your device.</div>
       </div>
       <div id="photoEdit" hidden>
         <div class="crop-frame">
@@ -290,6 +304,14 @@
   </div>
 </div>
 
+<script type="module">
+  // In-browser background remover. Loads lazily from a CDN; if it fails,
+  // the app falls back to a plain crop (no cutout). Runs fully on-device.
+  try{
+    const m = await import("https://esm.sh/@imgly/background-removal");
+    window.__removeBg = m.removeBackground || (m.default && m.default.removeBackground);
+  }catch(e){ /* background removal unavailable — graceful fallback */ }
+</script>
 <script>
 (function(){
   "use strict";
@@ -392,6 +414,38 @@
   }
   window.addEventListener("resize",resize);
 
+  function shadow(x,y,rx,ry){
+    pctx.fillStyle="rgba(0,0,0,.16)";
+    pctx.beginPath(); pctx.ellipse(x,y,rx,ry,0,0,Math.PI*2); pctx.fill();
+  }
+  function drawTree(x,baseY,s){
+    shadow(x, baseY+2*s, 18*s, 5*s);
+    pctx.fillStyle="#5a3a22";
+    pctx.fillRect(x-3*s, baseY-22*s, 6*s, 24*s);                 // trunk
+    pctx.fillStyle="#235f44";                                   // foliage
+    pctx.beginPath();
+    pctx.arc(x, baseY-36*s, 20*s, 0, Math.PI*2);
+    pctx.arc(x-15*s, baseY-26*s, 15*s, 0, Math.PI*2);
+    pctx.arc(x+15*s, baseY-26*s, 15*s, 0, Math.PI*2);
+    pctx.arc(x, baseY-22*s, 16*s, 0, Math.PI*2);
+    pctx.fill();
+    pctx.fillStyle="rgba(130,200,160,.18)";                     // highlight
+    pctx.beginPath(); pctx.arc(x-6*s, baseY-40*s, 8*s, 0, Math.PI*2); pctx.fill();
+  }
+  function drawBin(x,baseY,s){
+    const w=16*s, h=20*s;
+    shadow(x, baseY+1*s, 12*s, 4*s);
+    pctx.fillStyle="#6f7d88";                                   // body (tapered)
+    pctx.beginPath();
+    pctx.moveTo(x-w/2, baseY-h); pctx.lineTo(x+w/2, baseY-h);
+    pctx.lineTo(x+w/2-2*s, baseY); pctx.lineTo(x-w/2+2*s, baseY);
+    pctx.closePath(); pctx.fill();
+    pctx.strokeStyle="rgba(18,38,58,.35)"; pctx.lineWidth=Math.max(1,1.3*s);
+    [-4,0,4].forEach(dx=>{ pctx.beginPath(); pctx.moveTo(x+dx*s, baseY-h+4*s); pctx.lineTo(x+dx*s, baseY-3*s); pctx.stroke(); });
+    pctx.fillStyle="#56636e";                                   // lid
+    pctx.fillRect(x-w/2-2*s, baseY-h-4*s, w+4*s, 5*s);
+    pctx.fillRect(x-3*s, baseY-h-7*s, 6*s, 3*s);                // handle
+  }
   function drawGround(){
     const g = pctx.createLinearGradient(0,0,0,H);
     g.addColorStop(0,"#246149"); g.addColorStop(1,"#163b2c");
@@ -408,6 +462,12 @@
       pctx.arc(x-rr*0.7,y+2,rr*0.8,0,Math.PI*2);
       pctx.fill();
     });
+    const sc=Math.max(0.7, Math.min(W,H)/360);
+    drawTree(W*0.12, H*0.40, sc*1.15);
+    drawTree(W*0.89, H*0.45, sc*1.25);
+    drawTree(W*0.62, H*0.25, sc*0.9);
+    drawBin(W*0.30, H*0.62, sc);
+    drawBin(W*0.80, H*0.70, sc);
   }
 
   const greetings=["hi! 🐾","woof","sniff sniff","mrrp","new friend!","♥","let's play"];
@@ -535,11 +595,11 @@
   const drawCv=document.getElementById("draw");
   const dctx=drawCv.getContext("2d");
   let DW=0,DH=0;
-  let drawing=false, color="#6E4426", brush=9, erasing=false, filling=false, hasDrawn=false;
+  let drawing=false, color="#E5DCC3", brush=9, erasing=false, filling=false, hasDrawn=false;
   let activeTab="draw", photoImg=null, bodyType="dog", bodyColor="#E5DCC3";
   const cropC={x:120,y:100,r:78};
 
-  const palette=["#6E4426","#E5DCC3","#1C3D70","#000000","#d98a3a","#e7c14b","#c64b3b","#ffffff","#7a8b99","#f4a6c0","#1B4D3A"];
+  const palette=["#E5DCC3","#ffffff","#e7c14b","#d98a3a","#c64b3b","#f4a6c0","#6E4426","#7a8b99"];
   const swWrap=document.getElementById("swatches");
   palette.forEach((c,i)=>{
     const d=document.createElement("div");
@@ -730,27 +790,52 @@
   function redrawPhoto(){ drawCrop(); composePreview(); }
 
   const MAX_UPLOAD=20*1024*1024; // 20 MB
+  function showPhotoStage(stage){ // "empty" | "busy" | "edit"
+    document.getElementById("photoEmpty").hidden = stage!=="empty";
+    document.getElementById("photoBusy").hidden  = stage!=="busy";
+    document.getElementById("photoEdit").hidden  = stage!=="edit";
+  }
+  function srcToBlob(src){
+    const w=src.width||src.naturalWidth, h=src.height||src.naturalHeight;
+    const c=document.createElement("canvas"); c.width=w; c.height=h;
+    c.getContext("2d").drawImage(src,0,0);
+    return new Promise(res=>c.toBlob(res,"image/png"));
+  }
+  function blobToImage(blob){
+    return new Promise((res,rej)=>{
+      const u=URL.createObjectURL(blob); const i=new Image();
+      i.onload=()=>{ try{URL.revokeObjectURL(u);}catch(_){} res(i); }; i.onerror=rej; i.src=u;
+    });
+  }
   photoInput.addEventListener("change",e=>{
     const f=e.target.files && e.target.files[0]; if(!f) return;
     if(!/^image\//.test(f.type)){ flashName("Please choose an image file"); photoInput.value=""; return; }
     if(f.size>MAX_UPLOAD){ flashName("Photo too large — max 20 MB"); photoInput.value=""; return; }
+    showPhotoStage("busy");                     // loader on, through to cropper-ready
     const url=URL.createObjectURL(f);
     const im=new Image();
-    im.onload=()=>{
-      photoImg=downscale(im,1280); try{URL.revokeObjectURL(url);}catch(_){}
+    im.onload=async ()=>{
+      try{URL.revokeObjectURL(url);}catch(_){}
+      const small=downscale(im,1280);
+      let cut=small;
+      if(window.__removeBg){
+        try{
+          const inBlob=await srcToBlob(small);
+          const outBlob=await window.__removeBg(inBlob);
+          cut=await blobToImage(outBlob);      // transparent cutout, real shape
+        }catch(err){ cut=small; }              // fall back: keep photo with background
+      }
+      photoImg=cut;
       cropC.x=120; cropC.y=100; cropC.r=78;
       document.getElementById("cropR").value=78;
-      document.getElementById("photoEmpty").hidden=true;
-      document.getElementById("photoEdit").hidden=false;
+      showPhotoStage("edit");
       redrawPhoto();
     };
-    im.onerror=()=>{ flashName("Couldn't read that image"); };
+    im.onerror=()=>{ showPhotoStage("empty"); flashName("Couldn't read that image"); };
     im.src=url;
   });
   document.getElementById("photoReset").addEventListener("click",()=>{
-    photoImg=null; photoInput.value="";
-    document.getElementById("photoEmpty").hidden=false;
-    document.getElementById("photoEdit").hidden=true;
+    photoImg=null; photoInput.value=""; showPhotoStage("empty");
   });
   document.getElementById("cropR").addEventListener("input",function(){
     cropC.r=+this.value; clampCrop(); redrawPhoto();
@@ -819,8 +904,7 @@
     open("drawOverlay");
     document.getElementById("petName").value="";
     photoImg=null; photoInput.value="";
-    document.getElementById("photoEmpty").hidden=false;
-    document.getElementById("photoEdit").hidden=true;
+    showPhotoStage("empty");
     switchTab("photo");
   });
 
